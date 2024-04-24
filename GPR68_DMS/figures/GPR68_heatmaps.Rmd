@@ -1,0 +1,132 @@
+---
+title: "GPR68 Deep Mutational Scan Heatmaps"
+author: "Matthew Howard, UCSF"
+date: "March 11, 2024"
+output: html_notebook
+---
+this notebook contains code used to create heatmaps for GPR68 deep mutational scanning data
+
+screening conditions: pH 6.5 (active), pH 5.5 (inactive), and surface expression
+
+abbreviations and general naming conventions:
+decimals are omitted when referring to pH conditions, example:"ph55" for pH 5.5
+
+the heatmap plotting function was adapted from Christian Macdonald's (@UCSF) work as part of https://github.com/odcambc/DIMPLE_manuscript_figures
+
+set working directory, reset to source folder on your system 
+```{r}
+setwd("/Users/mkh/Library/CloudStorage/Box-Box/WCM Lab/Matt/Lab/Projects/proton_sensors/GPR68_DMS/figures") 
+```
+
+source R packages
+```{r}
+install.packages("tidyverse")
+install.packages("colorspace")
+install.packages("ggpubr")
+library(tidyverse)
+library(colorspace)
+library(ggpubr)
+```
+
+define orders of mutations and labels for heatmaps
+```{r}
+order_missense <- c("A", "G", "M", "V", "L", "I", "T", "S", "C", "Q", "N", "Y", "W", "F", "E", "D", "H", "K", "R", "P")
+order_full <- c("A", "G", "M", "V", "L", "I", "T", "S", "C", "Q", "N", "Y", "W", "F", "E", "D", "H", "K", "R", "P", "D_1", "D_2", "D_3", "I_1", "I_2", "I_3")
+
+label_missense <- c("A", "G", "M", "V", "L", "I", "T", "S", "C", "Q", "N", "Y", "W", "F", "E", "D", "H", "K", "R", "P")
+label_full <- c("A", "G", "M", "V", "L", "I", "T", "S", "C", "Q", "N", "Y", "W", "F", "E", "D", "H", "K", "R", "P", "Del x1", "Del x2", "Del x3", "Ins x1(G)", "Ins x2(GS)", "Ins x3(GSG)")
+```
+
+load variant scores file, parse into missense df and full df which contains indels
+```{r}
+gpr68_scores<-read.csv('gpr68_scores_processed.csv')
+
+colnames(gpr68_scores) <- c("hgvs", "ph55_SE", "ph55_epsilon", "ph55_score", "ph65_SE", "ph65_epsilon", "ph65_score", "surf_SE", "surf_epsilon", "surf_score",'pos','len','mutation_type','variants','is.wt')
+
+gpr68_scores_missense <- gpr68_scores %>% filter(variants %in% order_missense)
+```
+
+define GPR68 wt sequence
+```{r}
+gpr68_wt = "MGNITADNSSMSCTIDHTIHQTLAPVVYVTVLVVGFPANCLSLYFGYLQIKARNELGVYLCNLTVADLFYICSLPFWLQYVLQHDNWSHGDLSCQVCGILLYENIYISVGFLCCISVDRYLAVAHPFRFHQFRTLKAAVGVSVVIWAKELLTSIYFLMHEEVIEDENQHRVCFEHYPIQAWQRAINYYRFLVGFLFPICLLLASYQGILRAVRRSHGTQKSRKDQIQRLVLSTVVIFLACFLPYHVLLLVRSVWEASCDFAKGVFNAYHFSLLLTSFNCVADPVLYCFVSETTHRDLARLRGACLAFLTCSRTGRAREAYPLGAPEASGKSGAQGEEPELLTKLHPAFQTPNSPGSGGFPTGRLA"
+```
+
+define heatmap plotting function
+```{r}
+create_heatmap <- function(gene, order, chunk_size, scores_df, score_column, variant_names = NULL, output_file = NULL) {
+  
+  # Check if variant_names were provided; if not, use the original variant names
+  if (is.null(variant_names)) {
+    variant_names <- order
+  }
+  
+  scores_df <- scores_df %>%
+    filter(variants %in% order)
+  
+  gene_chunks <- str_split(gene, '')[[1]]
+  num_chunks <- ceiling(length(gene_chunks) / chunk_size)
+
+  min_score <- min(scores_df[, score_column], na.rm = TRUE)
+  max_score <- max(scores_df[, score_column], na.rm = TRUE)
+
+  heatmap_plots <- list()
+
+  for (i in 1:num_chunks) {
+    start_idx <- (i - 1) * chunk_size + 1
+    end_idx <- min(i * chunk_size, length(gene_chunks))
+
+    gene_chunk <- gene_chunks[start_idx:end_idx]
+    scores_chunk <- scores_df[scores_df$pos %in% c(start_idx:(start_idx + length(gene_chunk) - 1)), ]
+    
+    # Replace the variant names with the desired names
+    scores_chunk$variants <- factor(scores_chunk$variants, levels = order, labels = variant_names)
+
+    
+    heatmap_plot <- ggplot(data = scores_chunk, aes(x = pos, y = factor(variants, level = variant_names), fill = !!sym(score_column))) +
+      geom_tile(aes(color = "grey"), linewidth = 0.2, position = "identity") +
+      colorspace::scale_fill_continuous_divergingx(palette = 'RdBu', mid = 0, l1 = 0.2, l3 = 0.2, p1 = 0.9, p3 = .4, p4 = 0.7, rev = FALSE, na.value = 'grey', limits = c(min_score, max_score)) +
+theme(
+        panel.background = element_rect(fill = "grey", size = 0.1, linetype = "solid"),
+        panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"),
+        panel.grid.minor = element_blank(),
+        #axis.ticks.x = element_blank(),
+        axis.ticks.x.top = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(family = "sans", size = 9, angle = 0, hjust = 0.5, vjust = 1, margin = margin(t = 1)),
+        axis.text = element_text(family = "sans", size = 9, color = "black"),
+        axis.text.x.top = element_text(family = "sans",  size = 9, angle = 0, hjust = 0.5, margin = margin(r = 0)),
+        axis.text.y = element_text(family = "sans",  size = 9,  margin = margin(r = 0)) ) +
+      scale_x_continuous(breaks = seq(0, nchar(gene), by = 5), expand = c(0, 0),
+                         sec.axis = sec_axis(trans = ~., name = "Sequence", breaks = seq(start_idx, end_idx), labels = gene_chunk, guide = derive())) +
+      coord_fixed(ratio = 1) +
+      scale_color_manual(values = c(NA, 'grey'), guide = FALSE) +
+      labs(y = "Mutation", x = "Position") +
+      geom_tile(data = subset(scores_chunk, !is.wt), aes(color = "grey"), size = 0.2, position = "identity", show.legend = FALSE) +
+      geom_tile(data = subset(scores_chunk, is.wt), aes(color = "grey"), size = 0.2, position = "identity", show.legend = FALSE)
+    
+    heatmap_plots[[i]] <- heatmap_plot
+  }
+  heatmap_combined <- ggarrange(plotlist = heatmap_plots, nrow = num_chunks, ncol = 1)
+  ggsave(output_file, heatmap_combined, height = 10, width = 20, dpi = 450)
+}
+```
+
+print heatmaps for all screen conditions, missense only and full datasets
+```{r}
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "ph55_score", variant_names = label_full, output_file = "supplemental/supp_figure10/gpr68_ph55_full_heatmap.pdf")
+
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "ph65_score", variant_names = label_full, output_file = "supplemental/supp_figure12/gpr68_ph65_full_heatmap.pdf")
+
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "surf_score", variant_names = label_full, output_file = "supplemental/supp_figure14/gpr68_surf_heatmap.pdf")
+
+create_heatmap(gene = gpr68_wt, order = order_missense, chunk_size = 125, scores_df = gpr68_scores_missense, score_column = "ph55_score", variant_names = label_missense, output_file = "main/figure3/gpr68_ph55_missense_heatmap.pdf")
+```
+
+print SE heatmaps for all conditions
+```{r}
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "ph55_SE", variant_names = label_full, output_file = "supplemental/supp_figure11/gpr68_ph55_SE_heatmap.pdf")
+
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "ph65_SE", variant_names = label_full, output_file = "supplemental/supp_figure13/gpr68_ph65_SE.pdf")
+
+create_heatmap(gene = gpr68_wt, order = order_full, chunk_size = 125, scores_df = gpr68_scores, score_column = "surf_SE", variant_names = label_full, output_file = "supplemental/supp_figure15/gpr68_surf_SE.pdf")
+```

@@ -1,0 +1,308 @@
+---
+title: "GPR68 Deep Mutational Scan baseline counts"
+author: "Matthew Howard, UCSF"
+date: "March 11, 2024"
+output: html_notebook
+---
+this notebook contains code used to prepare plots of variant counts in the GPR68 mutational library
+
+some functions for wrangling counts data was adapted or otherwise borrowed from Christian Macdonald's (@UCSF) work as part of https://github.com/odcambc/DIMPLE_manuscript_figures
+
+set working directory, reset to source folder on your system 
+```{r}
+setwd("/Users/mkh/Library/CloudStorage/Box-Box/WCM Lab/Matt/Lab/Projects/proton_sensors/GPR68_DMS/figures") 
+```
+
+source R packages
+```{r}
+install.packages("tidyverse")
+install.packages("ggsci")
+install.packages("ggpubr")
+install.packages("gridExtra")
+install.packages("cowplot")
+install.packages("bio3d")
+install.packages("tune")
+install.packages("MASS")
+install.packages("colorspace")
+install.packages("readr")
+#install.packages("scales")
+library(tidyverse)
+library(ggsci)
+library(ggpubr)
+library(gridExtra)
+library(cowplot)
+library(bio3d)
+library(tune)
+library(MASS)
+library(colorspace)
+library(readr)
+#library(scales)
+```
+pull in counts .tsv file
+```{r}
+counts <- read_tsv("nontreated_R2_counts.tsv")
+```
+
+process the hgvs 
+```{r}
+colnames(counts) <- c("hgvs", "count")
+# Parses an HGVS string, outputs a vector with variant info
+# Parses an HGVS string, outputs a vector with variant info
+
+parse_hgvs <- function(hgvs_string) {
+  variant = ""
+  pos = -1
+  len = -1
+  mutation_type = ""
+  
+  # WT case, as in enrich2 format
+  if (str_detect(hgvs_string, "_wt")) {
+    variant = "Z"
+    pos = -1
+    len = -1
+    mutation_type = "X"
+  }
+  
+  # M/S/N
+  if (str_detect(hgvs_string, "[A-Z][0-9]+[A-Z]+")) {
+    len = 1 
+    match = str_match(hgvs_string, "([A-Z])([0-9]+)([A-Z]+)")
+    pos = match[3]
+    if (match[2] == match[4]) {
+      mutation_type = "S"
+      variant = match[4]
+    } else if (match[4] == 'X') {
+      mutation_type = "N"
+      variant = match[4]
+    } else {
+      mutation_type = "M"
+      variant = match[4]
+    }
+  }
+  
+  # D
+  if (str_detect(hgvs_string, ".*del")) {
+    mutation_type = "D"
+    if (str_detect(hgvs_string, "[A-Z][0-9]+_[A-Z][0-9]+del")) {
+      # D_2, D_3
+      match = str_match(hgvs_string, "[A-Z]([0-9]+)_[A-Z]([0-9]+)del")
+      pos = match[2]
+      len = strtoi(match[3]) - strtoi(match[2]) + 1
+      variant = paste("D_", as.character(len), sep="")
+    } else {
+      # D_1
+      len = 1
+      match = str_match(hgvs_string, "([A-Z])([0-9]+)del")
+      pos = match[3]
+      variant = "D_1"
+    }
+  }
+  
+  # I
+  if (str_detect(hgvs_string, ".*ins.*")) {
+    mutation_type = "I"
+    match = str_match(hgvs_string, "[A-Z]([0-9]+)_[A-Z][0-9]+ins([A-Z]+)")
+    len = nchar(match[3])
+    pos = match[2]
+    variant = paste("I_", as.character(len), sep="")
+  }
+  return(c(variant, pos, len, mutation_type))
+}
+
+## Turn a 3AA HGVS string into a 1AA HGVS string
+# Input strings are in form "p.Lys116Lys"
+# Output are in form "p.(K116K)"
+
+convert_3AA_hgvs <- function(hgvs_string) {
+  if (str_detect(hgvs_string, "_wt")) {
+    hgvs_string_1x = "_wt"
+  }
+  if (str_detect(hgvs_string, "p\\.([A-Za-z]{3})([0-9]+)([A-Za-z]{3})")) {
+    match = str_match(hgvs_string, "p\\.([A-Za-z]{3})([0-9]+)([A-Za-z]{3})")
+    
+    AA1 = toupper(match[2])
+    AA2 = toupper(match[4])
+    
+    AA1 = aa.table[AA1, ]['aa1'][[1]]
+    AA2 = aa.table[AA2, ]['aa1'][[1]]
+    hgvs_string_1x = paste( 'p.(', AA1, match[3], AA2, ')', sep="")
+    
+  }
+  
+  return(hgvs_string_1x)
+}
+
+# Parses an HGVS string with 3x AA names, outputs a vector with variant info
+# strings are in form "p.Lys116Lys"
+# coerce to "p.(K116K)" and call parse_hgvs on it
+
+parse_hgvs_2 <- function(hgvs_string) {
+  
+  if (str_detect(hgvs_string, "_wt")) {
+    hgvs_string_1x = "_wt"
+  }
+  
+  
+  #Coerce the HGVS string.
+  
+  if (str_detect(hgvs_string, "p\\.([A-Za-z]{3})([0-9]+)([A-Za-z]{3})")) {
+    match = str_match(hgvs_string, "p\\.([A-Za-z]{3})([0-9]+)([A-Za-z]{3})")
+    
+    AA1 = toupper(match[2])
+    AA2 = toupper(match[4])
+    
+    AA1 = aa.table[AA1, ]['aa1'][[1]]
+    AA2 = aa.table[AA2, ]['aa1'][[1]]
+    hgvs_string_1x = paste( 'p.(', AA1, match[3], AA2, ')', sep="")
+    
+  }
+  
+  return(parse_hgvs(hgvs_string_1x))
+}
+
+# Takes a df with identifiers in HGVS format, outputs
+# a df with four additional columns with variant info
+process_hgvs_df <- function(df) {
+  
+  n = nrow(df)
+  
+  variant_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("variants"))
+  pos_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("pos"))
+  len_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("len"))
+  mutation_type_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("mutation_type"))
+  
+  for(i in 1:n) {
+    output = parse_hgvs(df$hgvs[i])
+    variant_list[i,] = output[1]
+    pos_list[i,] = strtoi(output[2])
+    len_list[i,] = output[3]
+    mutation_type_list[i,] = output[4]
+  }
+  
+  
+  df <- add_column(df, pos_list)
+  df <- add_column(df, len_list)
+  df <- add_column(df, mutation_type_list)
+  df <- add_column(df, variant_list)
+  
+  return(df)
+}
+
+# Takes a df with identifiers in HGVS format with 3-character AA name, outputs
+# a df with four additional columns with variant info.
+# Note: this is for VatA, which only has substitutions and no indels. Length
+# is dropped, and also the positions are already correctly set.
+
+process_hgvs_df_2 <- function(df) {
+  
+  n = nrow(df)
+  
+  variant_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("variants"))
+  pos_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("pos"))
+  len_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("len"))
+  mutation_type_list = setNames(
+    as_tibble(
+      data.frame(
+        rep(NA, n)
+      )), 
+    c("mutation_type"))
+  
+  for(i in 1:n) {
+    output = parse_hgvs_2(df$hgvs[i])
+    variant_list[i,] = output[1]
+    pos_list[i,] = strtoi(output[2])
+    len_list[i,] = output[3]
+    mutation_type_list[i,] = output[4]
+  }
+  df <- add_column(df, mutation_type_list)
+  df <- add_column(df, variant_list)
+  return(df)
+}
+
+counts_processed <- process_hgvs_df(counts)
+```
+
+make stacked bar plot 
+```{r}
+# name a new df of the counts at each pos
+counts_by_pos <- counts_processed %>% filter(variants != "Z") %>% group_by(pos) %>% summarise(count = sum(count))
+
+# Create the stacked bar plot
+variant_coverage_plot <- ggplot(counts_processed %>% filter(variants != "Z"), aes(x = pos, y = count, fill = variants)) +
+  geom_bar(stat = "identity", position = "fill") +
+  theme_minimal() +
+    labs(title = "Variant coverage per position",
+       x = "Position",
+       y = "Fraction each variant") +
+  theme(legend.position = "right",
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        axis.text.x = element_text(hjust = 1, size = 6, color = "black"),
+        axis.text.y = element_text(size = 6, color = "black"),
+        axis.title = element_text(size = 6, color = "black"),
+        plot.title = element_text(size = 6, color = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        legend.key.height = unit(0.2, "cm"),  
+        legend.key.width = unit(0.2, "cm")) +
+  scale_x_continuous(limits = c(1,365), expand = c(0.01, 0), breaks = seq(0, max(counts_by_pos$pos), by = 50))
+  
+coverage_plot <- ggplot(counts_by_pos, aes(x = pos, y = count)) +
+  geom_histogram(stat = "identity", bins = 50) +
+  labs(title = "Count per position", 
+       x = "Position",
+       y = "Variant count") +
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1,365), expand = c(0.01, 0), breaks = seq(0, max(counts_by_pos$pos), by = 50)) +
+  theme_minimal() +
+  theme(legend.text = element_text(size = 6),
+        axis.text.x = element_text(angle = 0, hjust = 0.5, size = 6, color = "black"),
+        axis.text.y = element_text(size = 6, color = "black"),
+        axis.title = element_text(size = 6, color = "black"),
+        plot.title = element_text(size = 6, color = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+# use patchwork to arrange
+QC_plots <- variant_coverage_plot / (coverage_plot) + plot_annotation(tag_levels = 'A') & 
+  theme(plot.tag = element_text(size = 6, face = "bold"))
+
+ggsave("supplemental/supp_figure7/QC_plots.png", QC_plots, width = 180, height = 100, units = "mm", dpi = 450)
+```

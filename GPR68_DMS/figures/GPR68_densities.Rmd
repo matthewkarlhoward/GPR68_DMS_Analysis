@@ -1,0 +1,128 @@
+---
+title: "GPR68 Deep Mutational Scan Density Plots"
+author: "Matthew Howard, UCSF"
+date: "March 11, 2024"
+output: html_notebook
+---
+this notebook contains code used to create density plots for GPR68 deep mutational scanning data
+
+screening conditions: pH 6.5, pH 5.5, and surface expression
+
+abbreviations and general naming conventions:
+decimals are omitted when referring to pH conditions, example:"ph55" for pH 5.5
+
+set working directory, reset to source folder on your system 
+```{r}
+setwd("/Users/mkh/Library/CloudStorage/Box-Box/WCM Lab/Matt/Lab/Projects/proton_sensors/GPR68_DMS/figures") 
+```
+
+source R packages
+```{r}
+install.packages("tidyverse")
+install.packages("ggsci")
+install.packages("patchwork")
+library(tidyverse)
+library(ggsci)
+library(patchwork)
+```
+
+pull in DMS data
+```{r}
+gpr68_scores<-read.csv('gpr68_scores_processed.csv')
+
+colnames(gpr68_scores) <- c("hgvs", "ph55_SE", "ph55_epsilon", "ph55_score", "ph65_SE", "ph65_epsilon", "ph65_score", "surf_SE", "surf_epsilon", "surf_score",'pos','len','mutation_type','variants','is.wt')
+
+# rename cells with insertions and deletions "indels"
+gpr68_scores$mutation_type[gpr68_scores$mutation_type == "I"] <- "Indel"
+gpr68_scores$mutation_type[gpr68_scores$mutation_type == "D"] <- "Indel"
+gpr68_scores$mutation_type[gpr68_scores$mutation_type == "S"] <- "Syn"
+gpr68_scores$mutation_type[gpr68_scores$mutation_type == "M"] <- "Mis"
+```
+
+ph signaling assay score density figures
+```{r}
+# define theme elements
+my_theme <- theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      text = element_text(size = 10, color = "black", family = "sans"),
+      panel.border = element_rect(color = "black", fill=NA, size=1),
+      plot.title = element_text(hjust = 0.5),
+      panel.grid.major = element_blank(),  
+      panel.grid.minor = element_blank(),
+      axis.text = element_text(size = 10, color = "black", family = "sans"),
+      axis.ticks.x = element_line(size = 1, colour = "black"), 
+      axis.ticks.y = element_line(size = 1, colour = "black"),
+    ) 
+
+generate_density_plot <- function(data, x_var, output_file) {
+  # axis labels
+  x_var_label <- ifelse(x_var == "surf_score", "Surface Expression",
+                        ifelse(x_var == "ph55_score", "pH 5.5",
+                               ifelse(x_var == "ph65_score", "pH 6.5", x_var)))
+                                
+  # mutation_type mapping
+  mutation_type_labels <- c("Syn" = "Synonymous", "Indel" = "Indel", "Mis" = "Missense")
+
+  # order mutation types on plot
+  data <- data %>%
+    mutate(mutation_type_order = factor(mutation_type, levels = c("Syn", "Indel", "Mis")))
+
+  # create plot
+  ggdensity(data, x_var, size = 0.75, color = "mutation_type_order") +
+    labs(x = x_var_label, y = "Density") +
+    ggtitle(paste(x_var_label, "Density")) +
+    scale_y_continuous(breaks = c(0, 0.5, 1), limits=c(0,1)) +  # Set y-axis breaks
+    scale_color_manual(values = c("Syn" = "black", "Indel" = "purple", "Mis" = "green"))+
+    xlim(-5,5) +
+    my_theme + 
+    guides(fill = guide_legend(title = ""))
+  ggsave(output_file, height = 2, width = 3)
+}
+
+# make plots
+generate_density_plot(gpr68_scores, "ph55_score", "main/figure4/GPR68_ph55_density.pdf")
+generate_density_plot(gpr68_scores, "ph65_score", "main/figure4/GPR68_ph65_density.pdf")
+```
+
+surface expression density figure
+```{r}
+my_theme2 <- theme_minimal() +
+    theme(
+      legend.position = "none",
+      text = element_text(size = 10, color = "black", family = "sans"),
+      panel.border = element_rect(color = "black", fill=NA, size=0.5),
+      plot.title = element_text(hjust = 0.5),
+      panel.grid.major = element_blank(),  
+      panel.grid.minor = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks.x = element_line(size = 0.5, colour = "black"),
+      axis.ticks.y = element_line(size = 0.5, colour = "black"),
+      axis.ticks.length = unit(0.05, "cm"),
+      axis.title = element_blank()
+    )
+
+# slightly different function for the surface density plot, largely changing styling
+generate_density_plot2 <- function(data, x_var, output_file) {
+  # axis labels
+  x_var_label <- ifelse(x_var == "surf_score", "Surface Expression",
+                        ifelse(x_var == "ph55_score", "pH 5.5",
+                               ifelse(x_var == "ph65_score", "pH 6.5", x_var)))
+  # mutation_type mapping
+  mutation_type_labels <- c("Indel" = "Indel", "Mis" = "Missense", "Syn" = "Synonymous")
+    # order mutation types on plot
+  data <- data %>%
+    mutate(mutation_type_order = factor(mutation_type, levels = c("Syn", "Indel", "Mis")))
+
+  # create plot
+  ggdensity(data, x_var, size = 0.3, color = "mutation_type_order") +
+    scale_y_continuous(breaks = c(0, 0.5, 1), limits=c(0,1)) +  # Set y-axis breaks
+    scale_color_manual(values = c("Syn" = "black", "Indel" = "purple", "Mis" = "green")) +
+    my_theme2 +
+    guides(fill = guide_legend(title = ""))
+  ggsave(output_file, height = 15, width = 30, unit = "mm")
+}
+
+# make plots
+generate_density_plot2(gpr68_scores, "surf_score", "main/figure4/GPR68_surface_expression_density.pdf")
+```

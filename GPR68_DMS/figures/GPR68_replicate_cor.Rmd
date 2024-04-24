@@ -1,0 +1,78 @@
+---
+title: "GPR68 Deep Mutational Scan replicate corelations"
+author: "Matthew Howard, UCSF"
+date: "March 11, 2024"
+output: html_notebook
+---
+this notebook contains code used to analyze replicates scores from the GPR68 mutational scan dataset
+
+screening conditions: pH 6.5, pH 5.5, and surface expression
+
+abbreviations and general naming conventions:
+decimals are omitted when referring to pH conditions, example:"ph55" for pH 5.5
+
+set working directory, reset to source folder on your system 
+```{r}
+setwd("/Users/mkh/Library/CloudStorage/Box-Box/WCM Lab/Matt/Lab/Projects/proton_sensors/GPR68_DMS/figures") 
+```
+
+source R packages
+```{r}
+install.packages("tidyverse")
+install.packages("gridExtra")
+install.packages("ggpubr")
+library(tidyverse)
+library(gridExtra)
+library(ggpubr)
+```
+
+pull replicate scores from tsv file
+```{r}
+replicates<-read_tsv('GPR68_replicate_scores.tsv')
+replicates <- na.omit(replicates)
+```
+plot replicate correlations as scatters for each condition in a grid, r1 vs r2, r1 vs r3, r2 vs r3
+```{r}
+a <- ggscatter(replicates, x = "ph_5.5_R1", y = "ph_5.5_R2", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-5,10)
+b <- ggscatter(replicates, x = "ph_5.5_R1", y = "ph_5.5_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-5,10)
+c <- ggscatter(replicates, x = "ph_5.5_R2", y = "ph_5.5_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-5,10)
+
+d <- ggscatter(replicates, x = "ph_6.5_R1", y = "ph_6.5_R2", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-5,10) + ylim(-5,12)
+e <- ggscatter(replicates, x = "ph_6.5_R1", y = "ph_6.5_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-5,10) + ylim(-5,12)
+f <- ggscatter(replicates, x = "ph_6.5_R2", y = "ph_6.5_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-5,10) + ylim(-5,12)
+
+g <- ggscatter(replicates, x = "surface_R1", y = "surface_R2", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-6,10)
+h <- ggscatter(replicates, x = "surface_R1", y = "surface_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-6,10)
+i <- ggscatter(replicates, x = "surface_R2", y = "surface_R3", 
+          cor.coef = TRUE, cor.method = "spearman", size = 0.25, cor.coef.size = 2) +
+  theme(text = element_text(size = 6)) +
+  xlim(-6,6) + ylim(-6,10)
+
+overall_correlations <- grid.arrange(a,b,c,d,e,f,g,h,i, ncol=3, nrow=3)
+ggsave("supplemental/supp_figure16/replicate_correlations.png", overall_correlations, width = 100, height = 100, units = "mm", dpi = 450)
+
+```

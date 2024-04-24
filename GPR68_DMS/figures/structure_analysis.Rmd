@@ -1,0 +1,131 @@
+---
+title: "proton sensor sructure analysis"
+author: "Matthew Howard, UCSF"
+date: "March 11, 2024"
+output: html_notebook
+---
+this notebook is used for generating sequence logo plots, sequence similarity and RMSD matrices, and structure parsing for downstream use
+
+set working directory, reset to source folder on your system 
+```{r}
+setwd("/Users/mkh/Library/CloudStorage/Box-Box/WCM Lab/Matt/Lab/Projects/proton_sensors/GPR68_DMS/figures") 
+```
+
+source R packages
+```{r}
+install.packages("tidyverse")
+install.packages("ggsci")
+install.packages("ggpubr")
+install.packages("gridExtra")
+install.packages("cowplot")
+install.packages("bio3d")
+install.packages("tune")
+install.packages("MASS")
+install.packages("colorspace")
+install.packages("ggseqlogo")
+#install.packages("scales")
+library(tidyverse)
+library(ggsci)
+library(ggpubr)
+library(gridExtra)
+library(cowplot)
+library(bio3d)
+library(tune)
+library(MASS)
+library(colorspace)
+library(pheatmap)
+library(ggseqlogo)
+#library(scales)
+```
+
+sequence similarity and RMDS matrices
+```{r}
+# import seq similarity matrix csv and print a heatmap of values. this is a matrix where each row and column is a receptor and the values are the sequence similarity between the two receptors.
+similarity_matrix <- read.csv("proton_sensor_seq_identity_matrix.csv", header = TRUE)
+
+# Set row names
+rownames(similarity_matrix) <- similarity_matrix$identity
+similarity_matrix <- similarity_matrix[, -1]  # Remove the first column (RowNames)
+
+# print a heatmap of the sequence similarity matrix using pheatmap
+pheatmap(
+  similarity_matrix,
+  color = rev(hcl.colors(1000, "Reds")),
+  cellheight = 20,
+  cellwidth = 20,
+  border_color = "black",
+  display_numbers = TRUE,
+  number_color = "black", 
+  fontsize = 6,
+  fontfamily = "sans",
+  legend_breaks = c(0, 50, 100),
+  main = "Proton Sensor Sequence Identiy Matrix",
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  height = 5,
+  width = 5,
+  filename = "supplemental/supp_figure6/proton_sensor_seq_identity_matrix.pdf"
+)
+
+
+# structure RMSD matrix (7TM region only)
+RMSD_matrix <- read.csv("proton_sensor_RMSD_matrix.csv", header = TRUE)
+
+# Set row names
+rownames(RMSD_matrix) <- RMSD_matrix$RMSD
+RMSD_matrix <- RMSD_matrix[, -1]  # Remove the first column (RowNames)
+
+# print a heatmap of the sequence similarity matrix using pheatmap
+pheatmap(
+  RMSD_matrix,
+  color = rev(hcl.colors(1000, "Blues 3")),
+  cellheight = 20,
+  cellwidth = 20,
+  border_color = "black",
+  display_numbers = TRUE,
+  number_color = "black", 
+  fontsize = 6,
+  fontfamily = "sans",
+  legend_breaks = c(0, 0.75, 1.5),
+  main = "Proton Sensor RMSD Matrix",
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  height = 5,
+  width = 5,
+  filename = "supplemental/supp_figure6/proton_sensor_RMSD_matrix.pdf"
+)
+
+```
+
+PIF and CWxP and NPxxY combined
+```{r}
+# import csv of amino acid counts per position from GPCRdb alignment
+# AA labels should be single letter and column 1, "aminoacid"
+# each position should be a column, use the GPCRdb numbering
+AA_counts <- read.csv("sequences/PIF_CWxP_NPxxY_counts.csv", header = TRUE)
+
+# Convert the dataframe to a matrix
+AA_count_matrix <- as.matrix(AA_counts[, -1])  # Exclude the AminoAcid column
+
+# Set the row names as AA letters
+rownames(AA_count_matrix) <- AA_counts[,1]
+
+# make the seqlogo, specify AA, customize
+pif_cwxp_npxxy_logo <- ggseqlogo(AA_count_matrix, seq_type = "aa") +
+  theme_classic() +
+  theme(panel.grid = element_blank(), 
+        text = element_text(family = "sans", size = 6, color = "black"),
+        #axis.text.x = element_blank(),  # Remove x-axis ticks
+        axis.text = element_text(color = "black"),
+        axis.text.y = element_text(size = 6),  # Adjust y-axis text size
+        axis.ticks.x = element_blank(),  # Remove x-axis ticks
+        axis.ticks.y = element_line(size = 0.25),  # Set y-axis ticks' stroke width
+        axis.ticks.length = unit(0.05, "cm"),  # Set y-axis ticks' length
+        axis.line = element_line(size = 0.25),  # Set axis lines' stroke width
+        legend.position = "none") +
+  scale_x_continuous(expand = c(0.01, 0)) +
+  scale_y_continuous(expand = c(0, 0))
+
+# save the seqlogo
+ggsave("main/figure2/PIF_CWxP_NPxxY_logo.pdf",pif_cwxp_npxxy_logo, width = 40, height = 25, units = "mm", dpi = 450)
+```
